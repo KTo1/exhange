@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go version *)",
+      "Bash(../server/server)",
+      "Bash(echo \"PID=$!\")",
+      "Bash(fuser -k 9000/tcp)",
+      "Bash(go build *)"
+    ]
+  }
+}
