@@ -12,9 +12,6 @@
       "Read(//home/kto/go/pkg/mod/golang.org/x/**)",
       "Bash(go install *)",
       "Bash(GOTOOLCHAIN=go1.21.0 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o /tmp/test-server.exe ./server)",
-      "Bash(mkdir -p /tmp/go1.19)",
-      "Bash(tar -C /tmp/go1.19 -xzf /tmp/go1.19.tar.gz --strip-components=1)",
-      "Bash(/tmp/go1.19/bin/go version *)",
       "Bash(GOROOT=/tmp/go1.19 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 /tmp/go1.19/bin/go build -o /tmp/server-1.19.exe ./server)",
       "Bash(GOROOT=/tmp/go1.19 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 /tmp/go1.19/bin/go build -o /tmp/client-1.19.exe ./client)"
     ]

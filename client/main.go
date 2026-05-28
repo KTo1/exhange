@@ -19,6 +19,10 @@ type Client struct {
 	rooms       map[string]string // name -> id
 	username    string
 	welcomeText string
+
+	multiline     bool
+	multilineRoom string
+	multilineBuf  []string
 }
 
 func main() {
@@ -121,18 +125,36 @@ func (c *Client) inputLoop() {
 	fmt.Print("> ")
 
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		line := scanner.Text()
+
+		if c.multiline {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "/end" {
+				c.sendMultiline()
+				fmt.Print("> ")
+				continue
+			}
+			if trimmed == "/quit" {
+				return
+			}
+			c.multilineBuf = append(c.multilineBuf, line)
+			continue
+		}
+
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
 			fmt.Print("> ")
 			continue
 		}
 
-		if line == "/quit" {
+		if trimmed == "/quit" {
 			return
 		}
 
-		c.handleInput(line)
-		fmt.Print("> ")
+		c.handleInput(trimmed)
+		if !c.multiline {
+			fmt.Print("> ")
+		}
 	}
 }
 
@@ -140,6 +162,12 @@ func (c *Client) handleInput(line string) {
 	switch {
 	case line == "/users":
 		protocol.WriteMessage(c.conn, &protocol.ListRequest{Type: "list_users"})
+
+	case line == "/m":
+		c.startMultiline("")
+
+	case strings.HasPrefix(line, "/m "):
+		c.startMultiline(strings.TrimSpace(line[3:]))
 
 	case line == "/help":
 		fmt.Println(c.welcomeText)
@@ -285,6 +313,51 @@ func (c *Client) roomName(id string) string {
 		}
 	}
 	return id
+}
+
+func (c *Client) startMultiline(room string) {
+	c.multiline = true
+	c.multilineRoom = room
+	c.multilineBuf = nil
+	if room != "" {
+		fmt.Printf("*** многострочный ввод для %q. /end — отправить ***\n", room)
+	} else if c.currentRoom != "" {
+		fmt.Printf("*** многострочный ввод для %q. /end — отправить ***\n", c.currentRoom)
+	} else {
+		fmt.Println("*** многострочный ввод. /end — отправить ***")
+	}
+}
+
+func (c *Client) sendMultiline() {
+	c.multiline = false
+	text := strings.Join(c.multilineBuf, "\n")
+	c.multilineBuf = nil
+
+	if text == "" {
+		return
+	}
+
+	roomName := c.multilineRoom
+	if roomName == "" {
+		roomName = c.currentRoom
+	}
+	if roomName == "" {
+		fmt.Println("*** не выбрана комната. Укажите: /m <комната> ***")
+		return
+	}
+
+	roomID, ok := c.rooms[roomName]
+	if !ok {
+		fmt.Printf("*** комната %q не найдена ***\n", roomName)
+		return
+	}
+
+	req := protocol.SendMessageRequest{
+		Type:   "send_message",
+		RoomID: roomID,
+		Text:   text,
+	}
+	protocol.WriteMessage(c.conn, &req)
 }
 
 func parseArgs(input string) []string {
