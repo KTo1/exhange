@@ -1,6 +1,5 @@
 {
-  "alice": "$2a$10$jwXiINYXcCs9QCXEsgLpN.LE/j0/2vpDa1GzEbqSmnq7fcX.lRYgm",
-  "bob": "$2a$10$Qd9cL/a/r.hlmxUNFmBHgOFU.1RoyhcwTSvTGHm7W.TGtH8.u9TA6",
-  "kto": "$2a$10$yTeFNzYrTw16yBDf68bT4umTi0veIDIyHZP.H.pp9CHbfKK/Gkl92",
-  "kto1": "$2a$10$o67G5qEVlo6q6pjPi/8m.OsYDX3Q2CyRFu/UyWqlzetkKUeMVlh3q"
+  "alice": "$2a$10$nBo6x/onxtdErLp34QmCHOwZ9jjMCMhoan.PZ.gSZvQY5KMGfrkDm",
+  "kto": "$2a$10$c5Zw9hEwW8K4WAjeusnkDu0RBEcwesoRAvhd39pED7KaXuP4uJS3a",
+  "t1": "$2a$10$Dy2lul6Aw/g4fFqG79fh6u3TiRgAR4asp8RpTN6Ex6QZ28TS/II3m"
 }

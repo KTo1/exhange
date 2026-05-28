@@ -5,7 +5,10 @@
       "Bash(../server/server)",
       "Bash(echo \"PID=$!\")",
       "Bash(fuser -k 9000/tcp)",
-      "Bash(go build *)"
+      "Bash(go build *)",
+      "Read(//tmp/**)",
+      "Bash(./client/client -help)",
+      "Bash(./server/server -help)"
     ]
   }
 }

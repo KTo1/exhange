@@ -1,15 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net"
 	"os"
-	"bufio"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -29,7 +30,7 @@ type Room struct {
 }
 
 type Hub struct {
-	accounts  map[string]string // username -> bcrypt hash
+	accounts  map[string]string  // username -> bcrypt hash
 	conns     map[string][]*User // username -> active connections
 	rooms     map[string]*Room
 	userRooms map[string][]string // username -> []roomID
@@ -169,14 +170,12 @@ func (h *Hub) handleLogin(user *User, req *protocol.LoginRequest) {
 		user.sendCh <- protocol.ErrorMsg{Type: "error", Text: "неверный пароль"}
 		return
 	}
-	if _, online := h.users[req.Username]; online {
-		user.sendCh <- protocol.ErrorMsg{Type: "error", Text: "пользователь уже в сети"}
-		return
-	}
+
+	isFirstConn := len(h.conns[req.Username]) == 0
 
 	user.username = req.Username
 	user.authenticated = true
-	h.users[req.Username] = user
+	h.conns[req.Username] = append(h.conns[req.Username], user)
 
 	online := h.onlineUsers()
 	user.sendCh <- protocol.Welcome{
@@ -185,8 +184,10 @@ func (h *Hub) handleLogin(user *User, req *protocol.LoginRequest) {
 		Users: online,
 	}
 
-	h.broadcastExcept(req.Username, protocol.UserJoined{Type: "user_joined", Username: req.Username})
-	log.Printf("[+] %s вошел в сеть (онлайн: %d)", req.Username, len(h.users))
+	if isFirstConn {
+		h.broadcastExcept(req.Username, protocol.UserJoined{Type: "user_joined", Username: req.Username})
+	}
+	log.Printf("[+] %s вошел в сеть (соединений: %d, онлайн: %d)", req.Username, len(h.conns[req.Username]), len(h.conns))
 }
 
 func (h *Hub) handleRegister(user *User, req *protocol.LoginRequest) {
@@ -205,7 +206,7 @@ func (h *Hub) handleRegister(user *User, req *protocol.LoginRequest) {
 
 	user.username = req.Username
 	user.authenticated = true
-	h.users[req.Username] = user
+	h.conns[req.Username] = append(h.conns[req.Username], user)
 
 	online := h.onlineUsers()
 	user.sendCh <- protocol.Welcome{
@@ -215,7 +216,7 @@ func (h *Hub) handleRegister(user *User, req *protocol.LoginRequest) {
 	}
 
 	h.broadcastExcept(req.Username, protocol.UserJoined{Type: "user_joined", Username: req.Username})
-	log.Printf("[+] %s зарегистрировался и вошел в сеть (онлайн: %d)", req.Username, len(h.users))
+	log.Printf("[+] %s зарегистрировался и вошел в сеть (соединений: %d, онлайн: %d)", req.Username, len(h.conns[req.Username]), len(h.conns))
 }
 
 func (h *Hub) handleCreateRoom(user *User, req *protocol.CreateRoomRequest) {
@@ -252,7 +253,7 @@ func (h *Hub) handleCreateRoom(user *User, req *protocol.CreateRoomRequest) {
 
 	for _, m := range memberList {
 		h.userRooms[m] = append(h.userRooms[m], id)
-		if u, ok := h.users[m]; ok {
+		for _, u := range h.conns[m] {
 			u.sendCh <- created
 		}
 	}
@@ -282,7 +283,7 @@ func (h *Hub) handleSendMessage(user *User, req *protocol.SendMessageRequest) {
 		Text:   req.Text,
 	}
 	for m := range room.members {
-		if u, ok := h.users[m]; ok {
+		for _, u := range h.conns[m] {
 			u.sendCh <- msg
 		}
 	}
@@ -306,9 +307,22 @@ func (h *Hub) handleDisconnect(user *User) {
 	if !user.authenticated {
 		return
 	}
-	delete(h.users, user.username)
-	h.broadcastAll(protocol.UserLeft{Type: "user_left", Username: user.username})
-	log.Printf("[-] %s вышел из сети (онлайн: %d)", user.username, len(h.users))
+
+	conns := h.conns[user.username]
+	for i, u := range conns {
+		if u == user {
+			h.conns[user.username] = append(conns[:i], conns[i+1:]...)
+			break
+		}
+	}
+
+	if len(h.conns[user.username]) == 0 {
+		delete(h.conns, user.username)
+		h.broadcastAll(protocol.UserLeft{Type: "user_left", Username: user.username})
+		log.Printf("[-] %s вышел из сети (онлайн: %d)", user.username, len(h.conns))
+	} else {
+		log.Printf("[-] соединение %s закрыто (осталось соединений: %d)", user.username, len(h.conns[user.username]))
+	}
 }
 
 func (h *Hub) requireAuth(user *User) bool {
@@ -321,7 +335,7 @@ func (h *Hub) requireAuth(user *User) bool {
 
 func (h *Hub) onlineUsers() []string {
 	var list []string
-	for u := range h.users {
+	for u := range h.conns {
 		list = append(list, u)
 	}
 	return list
@@ -342,16 +356,20 @@ func (h *Hub) roomsForUser(username string) []protocol.RoomInfo {
 }
 
 func (h *Hub) broadcastExcept(username string, msg any) {
-	for name, u := range h.users {
+	for name, conns := range h.conns {
 		if name != username {
-			u.sendCh <- msg
+			for _, u := range conns {
+				u.sendCh <- msg
+			}
 		}
 	}
 }
 
 func (h *Hub) broadcastAll(msg any) {
-	for _, u := range h.users {
-		u.sendCh <- msg
+	for _, conns := range h.conns {
+		for _, u := range conns {
+			u.sendCh <- msg
+		}
 	}
 }
 
@@ -431,19 +449,17 @@ func handleConn(conn net.Conn, hub *Hub) {
 }
 
 func main() {
+	addr := flag.String("addr", ":9000", "адрес для прослушивания (напр. :9000 или 0.0.0.0:9000)")
+	flag.Parse()
+
 	hub := NewHub()
 	go hub.Run()
 
-	addr := ":9000"
-	if len(os.Args) > 1 {
-		addr = os.Args[1]
-	}
-
-	ln, err := net.Listen("tcp", addr)
+	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
-		log.Fatalf("не могу слушать %s: %v", addr, err)
+		log.Fatalf("не могу слушать %s: %v", *addr, err)
 	}
-	log.Printf("сервер запущен на %s", addr)
+	log.Printf("сервер запущен на %s", *addr)
 
 	for {
 		conn, err := ln.Accept()

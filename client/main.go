@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -21,16 +22,24 @@ type Client struct {
 }
 
 func main() {
-	addr := "localhost:9000"
-	if len(os.Args) > 1 {
-		addr = os.Args[1]
+	addr := flag.String("addr", "", "адрес сервера (напр. 192.168.1.10:9000)")
+	flag.Parse()
+
+	if *addr == "" {
+		*addr = os.Getenv("EXHANGE_ADDR")
+	}
+	if *addr == "" {
+		*addr = "localhost:9000"
 	}
 
-	conn, err := net.Dial("tcp", addr)
+	fmt.Printf("подключение к %s...\n", *addr)
+	conn, err := net.Dial("tcp", *addr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "не могу подключиться к %s: %v\n", addr, err)
+		fmt.Fprintf(os.Stderr, "не могу подключиться к %s: %v\n", *addr, err)
+		fmt.Fprintf(os.Stderr, "укажите адрес через -addr или переменную EXHANGE_ADDR\n")
 		os.Exit(1)
 	}
+	fmt.Printf("подключено к %s\n", *addr)
 	defer conn.Close()
 
 	c := &Client{
