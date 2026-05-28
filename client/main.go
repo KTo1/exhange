@@ -27,6 +27,10 @@ type Client struct {
 
 func main() {
 	addr := flag.String("addr", "", "адрес сервера (напр. 192.168.1.10:9000)")
+	loginFlag := flag.Bool("login", false, "войти с существующим аккаунтом")
+	regFlag := flag.Bool("register", false, "зарегистрировать новый аккаунт")
+	userFlag := flag.String("user", "", "имя пользователя")
+	passFlag := flag.String("pass", "", "пароль")
 	flag.Parse()
 
 	if *addr == "" {
@@ -51,8 +55,21 @@ func main() {
 		rooms: make(map[string]string),
 	}
 
-	if !c.authenticate() {
-		return
+	action := ""
+	if *loginFlag {
+		action = "login"
+	} else if *regFlag {
+		action = "register"
+	}
+
+	if action != "" && *userFlag != "" && *passFlag != "" {
+		if !c.authenticateFlags(action, *userFlag, *passFlag) {
+			return
+		}
+	} else {
+		if !c.authenticate() {
+			return
+		}
 	}
 
 	go c.readLoop()
@@ -91,6 +108,43 @@ func (c *Client) authenticate() bool {
 	protocol.WriteMessage(c.conn, &req)
 
 	// ждем ответ сервера
+	reader := bufio.NewReader(c.conn)
+	meta, raw, err := protocol.ReadMessage(reader)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "соединение разорвано: %v\n", err)
+		return false
+	}
+
+	switch meta.Type {
+	case "welcome":
+		var w protocol.Welcome
+		json.Unmarshal(raw, &w)
+		c.username = username
+		c.welcomeText = w.Text
+		fmt.Println(w.Text)
+		if len(w.Users) > 0 {
+			fmt.Printf("\n*** пользователи в сети: %v ***\n", w.Users)
+		}
+		return true
+	case "error":
+		var e protocol.ErrorMsg
+		json.Unmarshal(raw, &e)
+		fmt.Fprintf(os.Stderr, "*** ошибка: %s ***\n", e.Text)
+		return false
+	default:
+		fmt.Fprintf(os.Stderr, "*** неожиданный ответ сервера: %s ***\n", meta.Type)
+		return false
+	}
+}
+
+func (c *Client) authenticateFlags(action, username, password string) bool {
+	req := protocol.LoginRequest{
+		Type:     action,
+		Username: username,
+		Password: password,
+	}
+	protocol.WriteMessage(c.conn, &req)
+
 	reader := bufio.NewReader(c.conn)
 	meta, raw, err := protocol.ReadMessage(reader)
 	if err != nil {
